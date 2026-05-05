@@ -1,44 +1,48 @@
 # Scaler Agent
 
-A Next.js + Gemini conversational agent that runs a strict
-START -> THINK -> TOOL -> OBSERVE -> OUTPUT reasoning loop and clones the
-Scaler Academy site into a self-contained `index.html`.
+So basically this is a Next.js app where Gemini runs a strict
+START -> THINK -> TOOL -> OBSERVE -> OUTPUT loop, and at the end it writes
+a self-contained `index.html` that looks like the Scaler Academy site.
+You chat with it in the browser and it figures out the steps on its own.
 
-## Stack
+## What's running under the hood
 
-- Next.js 16 (App Router) + React 19 + TypeScript + Tailwind v4
-- Google Gemini (`gemini-2.5-flash-lite` by default — lowest tier, highest free daily quota) via `@google/generative-ai`
-- Server-Sent Events stream from `/api/agent` to a React chat UI
-- Sandboxed file output under `./generated/`
+- Next.js 16 (App Router), React 19, TypeScript and Tailwind v4
+- Google Gemini, default model is `gemini-2.5-flash-lite` (lowest tier but
+  gives the highest free daily quota) via `@google/generative-ai`
+- Server-Sent Events from `/api/agent` so the chat UI sees each step live
+- File writes are sandboxed inside `./generated/`, nothing escapes that folder
 
-## Setup
+## Running it locally
 
 ```bash
 npm install
 cp .env.local.example .env.local
-# put your key in .env.local:  GEMINI_API_KEY=...
-# (optional) override the model:  GEMINI_MODEL=gemini-2.5-flash
+# put your key inside .env.local:   GEMINI_API_KEY=...
+# (optional) pick a different model: GEMINI_MODEL=gemini-2.5-flash
 npm run dev
 ```
 
-Open http://localhost:3000.
+Then open http://localhost:3000 and the chat shows up.
 
-## How it works
+## How the loop actually works
 
-- The browser POSTs `{ message, history }` to `/api/agent`.
-- The route runs the agent loop server-side and streams each step over SSE.
-- `TOOL` steps execute one of: `getTheWeatherOfCity`, `getGithubDetailsAboutUser`,
-  `executeCommand` (allow-listed: mkdir/ls/cat/echo/pwd, sandboxed to
-  `./generated/`), `writeFile` (also sandboxed to `./generated/`).
-- The generated `scaler_clone/index.html` is served by `/api/preview` and
-  rendered in an `<iframe>` next to the chat.
+- Browser sends `{ message, history }` to `/api/agent`
+- That route runs the agent server side and streams every step back over
+  SSE, so you literally see the model reasoning in real time
+- When the model emits a `TOOL` step, one of these gets called:
+  `getTheWeatherOfCity`, `getGithubDetailsAboutUser`, `executeCommand`
+  (only mkdir / ls / cat / echo / pwd are allowed, and only inside
+  `./generated/`), and `writeFile` (which also stays inside `./generated/`)
+- Once it writes `scaler_clone/index.html`, `/api/preview` serves that file
+  and shows it in an iframe right next to the chat
 
-## Project layout
+## Folder layout
 
 ```
 src/
   app/
-    api/agent/route.ts     # SSE agent loop
+    api/agent/route.ts     # the SSE agent loop
     api/preview/route.ts   # serves files from ./generated/
     page.tsx
     layout.tsx
@@ -47,21 +51,23 @@ src/
     StepBubble.tsx
     Preview.tsx
   lib/
-    llm.ts                 # Groq client factory + safe JSON parse
-    prompt.ts              # SYSTEM_PROMPT
+    llm.ts                 # gemini client + safe JSON parsing
+    prompt.ts              # the SYSTEM_PROMPT
     types.ts
     tools/
-      index.ts             # tool_map
+      index.ts             # the tool_map
       weather.ts
       github.ts
       exec.ts
       writeFile.ts
-generated/                 # runtime output (gitignored)
+generated/                 # runtime output, gitignored
 ```
 
-## Notes
+## Few things worth knowing
 
-- Filesystem-based output is intended for local dev. On read-only serverless
-  hosts, switch `writeFile`/`exec` to in-memory and pipe content via SSE.
-- Conversation state is held client-side: the server returns the updated
-  message log on `done`, the client sends it back on the next turn.
+- This whole filesystem-based output is mainly for local dev. If you push
+  it to a serverless host where the disk is read only, you'll have to swap
+  `writeFile` and `exec` to in-memory and just stream the content over SSE.
+- Conversation state is kept on the client side. The server returns the
+  updated history on `done`, and the client sends it back on the next turn.
+  Simple, and it just works.
